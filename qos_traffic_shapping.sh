@@ -50,62 +50,6 @@ kill_netservers()
 	killall -9 netserver 2&>1 > /dev/null || echo "no netservers running"
 }
 
-banner()
-{
-	echo ""
-	echo ------------------------------------------------------------------------
-	echo -   $1
-	echo ------------------------------------------------------------------------
-}
-
-bare_netperf() {
-
-	pre_test_base
-	pre_test_netns
-	banner "A->B starting netperf with no QOS set "
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111
-
-}
-
-basic_ratelimit_netperf(){
-
-	pre_test_base
-    ovs-vsctl set interface $IF_B ingress_policing_rate=1000
-	ovs-vsctl set interface $IF_B ingress_policing_burst=100
-
-	ovs-vsctl set interface $IF_A ingress_policing_rate=2000
-	ovs-vsctl set interface $IF_A ingress_policing_burst=200
-	pre_test_netns
-	banner "A->B starting ingress_policy_rate test (B 1Mbps, A 2Mbps)"
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111
-
-	banner "B->A starting ingress_policy_rate test (B 1Mbps, A 1Mbps)"
-	ip netns exec $NETNS_B netperf -H $IP_A -p 1111
-}
-
-htb_queue_ratelimit_netperf(){
-
-	pre_test_base
-	ovs-vsctl set Port $IF_A qos=@newqos -- \
-	 		--id=@newqos create qos type=linux-htb other-config:max-rate=2000000 queues=0=@q0 -- \
-	 		--id=@q0 create Queue other-config:min-rate=2000000 other-config:max-rate=2000000
-
-ovs-vsctl set Port $IF_B qos=@newqos -- \
-	 		--id=@newqos create qos type=linux-htb other-config:max-rate=3000000 queues=0=@q0 -- \
-	 		--id=@q0 create Queue other-config:min-rate=3000000 other-config:max-rate=3000000
-
-
-	pre_test_netns
-
-	banner "A->B starting HTB queue test (3Mbps B, 2Mbps A)"
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111
-
-	banner "B->A starting HTB queue test (3Mbps B, 2Mbps A)"
-	ip netns exec $NETNS_B netperf -H $IP_A -p 1111
-}
-
-
-
 
 prerequisites() {
 	#sudo yum install netperf -y  #:(
@@ -144,8 +88,69 @@ pre_test_netns()
 	start_netservers
 }
 
+pre_test() {
+	pre_test_base
+	pre_test_netns
+}
+
+
+bidirectional_netperf() { 
+	banner "A->B starting $1"
+	ip netns exec $NETNS_A netperf -H $IP_B -p 1111
+
+	banner "B->A starting $1"
+	ip netns exec $NETNS_B netperf -H $IP_A -p 1111
+}
+
+banner()
+{
+	echo ""
+	echo ------------------------------------------------------------------------
+	echo -   $1
+	echo ------------------------------------------------------------------------
+}
+
+bare_netperf() {
+
+	pre_test
+	banner "A->B starting netperf with no QOS set "
+	ip netns exec $NETNS_A netperf -H $IP_B -p 1111
+
+}
+
+basic_ratelimit_netperf(){
+
+	pre_test
+    ovs-vsctl set interface $IF_B ingress_policing_rate=1000
+	ovs-vsctl set interface $IF_B ingress_policing_burst=100
+
+	ovs-vsctl set interface $IF_A ingress_policing_rate=2000
+	ovs-vsctl set interface $IF_A ingress_policing_burst=200
+
+
+	bidirectional_netperf "ingress_policy_rate test (B 1Mbps, A 2Mbps)"
+
+}
+
+htb_queue_ratelimit_netperf(){
+
+	pre_test
+	ovs-vsctl set Port $IF_A qos=@newqos -- \
+	 		--id=@newqos create qos type=linux-htb other-config:max-rate=2000000 queues=0=@q0 -- \
+	 		--id=@q0 create Queue other-config:min-rate=2000000 other-config:max-rate=2000000
+
+	ovs-vsctl set Port $IF_B qos=@newqos -- \
+	 		--id=@newqos create qos type=linux-htb other-config:max-rate=3000000 queues=0=@q0 -- \
+	 		--id=@q0 create Queue other-config:min-rate=3000000 other-config:max-rate=3000000
+
+	bidirectional_netperf "HTB queue test (3Mbps B, 2Mbps A)"
+
+}
+
+
 set -e
 
+# MAIN SEQUENCE
 
 prerequisites
 bare_netperf
