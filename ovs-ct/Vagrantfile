@@ -1,0 +1,61 @@
+require 'vagrant-openstack-provider'
+
+Vagrant.configure('2') do |config|
+
+  config.vm.box       = 'stack'
+  config.vm.hostname  = 'devstack'
+  config.ssh.forward_agent = true
+  config.vm.provider :openstack do |os, override|
+    os.server_name        = 'openvswitch'
+    os.openstack_auth_url = "#{ENV['OS_AUTH_URL']}/tokens"
+    os.username           = "#{ENV['OS_USERNAME']}"
+    os.password           = "#{ENV['OS_PASSWORD']}"
+    os.tenant_name        = "#{ENV['OS_TENANT_NAME']}"
+    os.flavor             = ['m1.medium']
+    os.image              = ['centos7', 'centos-7-cloud']
+    os.floating_ip_pool   = ['external', 'external-compute01']
+    os.user_data          = <<-EOF
+#!/bin/bash
+sed -i 's/Defaults    requiretty/Defaults    !requiretty/g' /etc/sudoers
+    EOF
+    override.ssh.username = 'centos'
+  end
+
+
+  config.vm.provision :shell, :inline=> <<-EOF
+        sudo yum install -y https://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
+        sudo yum install -y deltarpm
+        sudo yum install -y git git-review
+        sudo yum remove -y firewalld
+        sudo yum update -y
+        exit 0
+  EOF
+  config.vm.provision :reload
+
+  config.vm.provision :shell, :privileged=>false,
+                      :inline=> <<-EOF
+        # configure ssh for no strict host checking (avoid making instalation interactive)
+        grep StrictHostKeyChecking ~/.ssh/config || \
+            echo -e \"Host *\n\tStrictHostKeyChecking no\n\" >> ~/.ssh/config;
+        chmod 700 ~/.ssh/config;
+
+        # personalize git, etc, anything you use for development
+        [ -f /vagrant/personal_settings.sh ] && /vagrant/personal_settings.sh
+
+        /vagrant/ovs-install.sh
+  EOF
+  #specific provider sections
+
+  config.vm.provider "parallels" do |v, override|
+    override.vm.box = "parallels/centos-7.0"
+    v.memory = 3024
+    v.cpus = 4
+    override.vm.network "private_network", ip: "192.168.33.11",
+                                           dns: "8.8.8.8"
+    override.vm.synced_folder "/Volumes/stack", "/opt/stack/",
+                          type: 'nfs', map_uid: 'root', map_gid: 'wheel'
+
+  end
+
+
+end

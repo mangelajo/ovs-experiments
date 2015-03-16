@@ -1,0 +1,14 @@
+#!/bin/sh
+cd ~
+
+sudo yum install -y git vim vim-enhanced ctags unzip python-flake8
+
+# go vim go!,
+git clone https://github.com/mangelajo/vim-settings.git
+vim-settings/install.sh
+
+git config --global gitreview.username mangelajo
+git config --global user.name "Miguel Angel Ajo"
+git config --global user.email "mangelajo@redhat.com"
+git config --global core.editor vim
+
