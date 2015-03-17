@@ -25,7 +25,7 @@ sed -i 's/Defaults    requiretty/Defaults    !requiretty/g' /etc/sudoers
   config.vm.provision :shell, :inline=> <<-EOF
         sudo yum install -y https://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
         sudo yum install -y deltarpm
-        sudo yum install -y git git-review
+        sudo yum install -y git git-review bridge-utils tcpdump
         sudo yum remove -y firewalld
         sudo yum update -y
         exit 0
