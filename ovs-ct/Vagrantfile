@@ -42,6 +42,7 @@ sed -i 's/Defaults    requiretty/Defaults    !requiretty/g' /etc/sudoers
         # personalize git, etc, anything you use for development
         [ -f /vagrant/personal_settings.sh ] && /vagrant/personal_settings.sh
 
+        /vagrant/netperf-install.sh
         /vagrant/ovs-install.sh
   EOF
   #specific provider sections

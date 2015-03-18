@@ -67,6 +67,12 @@ class EndPoint(object):
         else:
             run("ip link set %s up" % interface)
 
+    def _if_down(self, interface, netns=None):
+        if netns:
+            run("ip netns exec %s ip link set %s down" % (netns, interface))
+        else:
+            run("ip link set %s down" % interface)
+
     def _del_veth(self, veth):
         run("ip link del %s type veth" % veth)
 
@@ -80,6 +86,7 @@ class EndPoint(object):
             netns_exec = "ip netns exec %s " % self.netns
             if self.linux_bridge:
                 run("brctl addbr %s" % self.linux_bridge)
+                self._if_up(self.linux_bridge)
                 self._create_veth_pair(self.veth_ovs, self.veth_lbr)
                 # add the 'instance' side
                 run("brctl addif %s %s" % (self.linux_bridge, self.veth_br))
@@ -107,6 +114,7 @@ class EndPoint(object):
             run("ip netns del %s" % self.netns)
             if self.linux_bridge:
                 # this also deletes the two extra veths
+                self._if_down(self.linux_bridge)
                 run("brctl delbr %s" % self.linux_bridge)
 
         run("ovs-vsctl del-br %s" % self.ovs_bridge)
