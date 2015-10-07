@@ -56,9 +56,9 @@ prerequisites() {
 	which netperf >/dev/null && return 0
 
 	cd /tmp
-	wget -c ftp://ftp.netperf.org/netperf/netperf-2.6.0.tar.bz2
-	tar xvfj netperf-2.6.0.tar.bz2
-	cd netperf-2.6.0
+	wget -c ftp://ftp.netperf.org/netperf/netperf-2.7.0.tar.bz2
+	tar xvfj netperf-2.7.0.tar.bz2
+	cd netperf-2.7.0
 	./configure --prefix=/usr
 	make install
 }
