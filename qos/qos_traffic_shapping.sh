@@ -20,7 +20,10 @@ create_bridge_and_interfaces() {
 	ip link add $IF_B type veth peer name $IF_B_2
 	
 	ovs-vsctl add-port $QOS_BR $IF_A
-	ovs-vsctl add-port $QOS_BR $IF_B 
+	ovs-vsctl add-port $QOS_BR $IF_B
+    
+    ip link set $IF_A up
+    ip link set $IF_B up 
 }
 
 create_netns_and_set_interfaces() {
@@ -157,3 +160,4 @@ bare_netperf
 basic_ratelimit_netperf
 htb_queue_ratelimit_netperf
 kill_netservers
+cleanup
