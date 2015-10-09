@@ -159,15 +159,24 @@ pre_test() {
 
 basic_netperf() {
         banner "A->B starting $1"
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 
-	ip netns exec $NETNS_A netperf -t TCP_RR -H $IP_B -p 1111 
+	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 | grep -v MIGRATED 
+	ip netns exec $NETNS_A netperf -t TCP_RR -H $IP_B -p 1111 | grep -v MIGRATED
 }
 
 bidirectional_netperf() { 
 	banner "[$1] A->B  and A->C starting"
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 &
-	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 
-	sleep 2 
+	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 | grep -v MIGRATED >/tmp/netperf1.txt &
+	PID1=$!
+	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 | grep -v MIGRATED >/tmp/netperf2.txt &
+	PID2=$! 
+	
+	wait $PID1
+	wait $PID2
+	echo "\________________ A -> B ___________________/" >> /tmp/netperf1.txt
+	echo "\________________ A -> C ___________________/" >> /tmp/netperf2.txt
+
+
+	paste /tmp/netperf1.txt /tmp/netperf2.txt
 
 #     disabled because it locks & breaks ???
 #	banner "A->B  and A->C (UDP) starting $1"
@@ -176,17 +185,17 @@ bidirectional_netperf() {
 #	sleep 2 
 
 	banner "[$1] A->B alone starting"
-	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 
+	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 | grep -v MIGRATED 
 
 	banner "[$1] A->C alone starting"
-	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 
+	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 | grep -v MIGRATED
 
 	banner "[$1] B->A starting"
-	ip netns exec $NETNS_B netperf -H $IP_A -p 1111
+	ip netns exec $NETNS_B netperf -H $IP_A -p 1111 | grep -v MIGRATED
 
 
 	banner "[$1] B->C starting (in compute node -br-int-)"
-	ip netns exec $NETNS_B netperf -H $IP_C -p 1111
+	ip netns exec $NETNS_B netperf -H $IP_C -p 1111 | grep -v MIGRATED
 }
 
 banner()
@@ -265,8 +274,6 @@ htb_queue_ratelimit_overhead_netperf(){
 }
 
 htb_queue_ratelimit_netperf(){
-
-
     	pre_test
 	# egress to port A - before leaving the network
 	ovs-vsctl set Port $IF_A qos=@newqos -- \
@@ -280,11 +287,9 @@ htb_queue_ratelimit_netperf(){
 			--id=@q0 create Queue other-config:max-rate=$_10Mb -- \
 	 		--id=@q1 create Queue other-config:min-rate=7350000 other-config:max-rate=7350000 --\
 			--id=@q2 create Queue other-config:min-rate=1050000 other-config:max-rate=9450000
-
      
      IF_A_OFPORT=$(_find_br_ofport $EXT_BR $IF_A)
      PATCH_A_OFPORT=$(_find_br_ofport $EXT_BR $PATCH_PORT_A)
-
 	
      MAC_A=$(_find_ns_if_mac $NETNS_A $IF_A_2)
      MAC_B=$(_find_ns_if_mac $NETNS_B $IF_B_2)
@@ -297,9 +302,36 @@ htb_queue_ratelimit_netperf(){
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_B actions=enqueue:$IF_A_OFPORT:1" 
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_C actions=enqueue:$IF_A_OFPORT:1" 
 
-     bidirectional_netperf "HTB queue test"
+     bidirectional_netperf "HTB queue test -openvswitch-"
 }
 
+
+htb_tc_ratelimit_netperf(){
+	pre_test
+	# http://lartc.org/howto/lartc.cookbook.ultimate-tc.html (15.8.3)
+	# egress VMs -> outside world
+        tc qdisc add dev $PATCH_PORT_B root handle 1: htb default 255 
+	tc class add dev $PATCH_PORT_B parent 1: classid 1:1 htb rate 10000kbit burst 100kbit
+	tc class add dev $PATCH_PORT_B parent 1:1 classid 1:10 htb rate 7000kbit ceil 7000kbit burst 700kbit cburst 700kbit
+	tc class add dev $PATCH_PORT_B parent 1:1 classid 1:20 htb rate 1000kbit ceil 9000kbit burst 1000kbit cburst 900kbit
+	tc class add dev $PATCH_PORT_B parent 1:1 classid 1:255 htb rate 1kbit ceil 10000kbit burst 0kbit cburst 1000kbit
+
+	tc filter add dev $PATCH_PORT_B parent 1: prio 1 u32 match ip src $IP_B/32 flowid 1:10
+	#tc filter add dev $PATCH_PORT_B parent 1: prio 1 u32 match ip src $IP_C/32 flowid 1:20
+  
+	# ingress outside world -> VMs
+	tc qdisc add dev $PATCH_PORT_A root handle 1: htb default 255 
+	tc class add dev $PATCH_PORT_A parent 1: classid 1:1 htb rate 10000kbit burst 1000k
+	tc class add dev $PATCH_PORT_A parent 1:1 classid 1:10 htb rate 7000kbit ceil 7000kbit burst 700kbit cburst 700kbit
+	tc class add dev $PATCH_PORT_A parent 1:1 classid 1:20 htb rate 1000kbit ceil 9000kbit burst 100kbit cburst 900kbit
+	tc class add dev $PATCH_PORT_A parent 1:1 classid 1:255 htb rate 1kbit ceil 10000kbit burst 0kbit cburst 1000kbit
+
+	tc filter add dev $PATCH_PORT_A parent 1: prio 1 u32 match ip dst $IP_B/32 flowid 1:10
+	#tc filter add dev $PATCH_PORT_A parent 1: prio 1 u32 match ip dst $IP_C/32 flowid 1:20
+  
+	bidirectional_netperf "HTB queue test -tc on veths-"
+}
+	
 
 set -e
 
@@ -309,7 +341,9 @@ prerequisites
 #bare_netperf
 #basic_ratelimit_netperf
 #patch_port_netperf
-htb_queue_ratelimit_overhead_netperf
-htb_queue_ratelimit_netperf
+#htb_queue_ratelimit_overhead_netperf
+#htb_queue_ratelimit_netperf
+htb_tc_ratelimit_netperf
+
 kill_netservers 2>/dev/null 1>/dev/null
-cleanup
+#cleanup
