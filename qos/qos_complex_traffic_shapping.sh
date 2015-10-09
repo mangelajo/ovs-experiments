@@ -164,7 +164,7 @@ basic_netperf() {
 }
 
 bidirectional_netperf() { 
-	banner "A->B  and A->C starting $1"
+	banner "[$1] A->B  and A->C starting"
 	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 &
 	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 
 	sleep 2 
@@ -175,14 +175,18 @@ bidirectional_netperf() {
 #	ip netns exec $NETNS_A netperf -t UDP_STREAM -H $IP_C -p 1111 
 #	sleep 2 
 
-	banner "A->B alone starting $1"
+	banner "[$1] A->B alone starting"
 	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 
 
-	banner "A->C alone starting $1"
+	banner "[$1] A->C alone starting"
 	ip netns exec $NETNS_A netperf -H $IP_C -p 1111 
 
-	banner "B->A starting $1"
+	banner "[$1] B->A starting"
 	ip netns exec $NETNS_B netperf -H $IP_A -p 1111
+
+
+	banner "[$1] B->C starting (in compute node -br-int-)"
+	ip netns exec $NETNS_B netperf -H $IP_C -p 1111
 }
 
 banner()
@@ -268,7 +272,7 @@ htb_queue_ratelimit_netperf(){
 	ovs-vsctl set Port $IF_A qos=@newqos -- \
 	 		--id=@newqos create qos type=linux-htb other-config:max-rate=$_10Mb queues=0=@q0,1=@q1 -- \
 	 		--id=@q0 create Queue other-config:max-rate=$_10Mb -- \
-            		--id=@q1 create Queue other-config:min-rate=2100000 other-config:max-rate=4200000 --
+            		--id=@q1 create Queue other-config:min-rate=2100000 other-config:max-rate=4200000 
 
     	# ingress from port A - just after entering the network
 	ovs-vsctl set Port $PATCH_PORT_A qos=@newqos -- \
@@ -293,7 +297,7 @@ htb_queue_ratelimit_netperf(){
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_B actions=enqueue:$IF_A_OFPORT:1" 
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_C actions=enqueue:$IF_A_OFPORT:1" 
 
-     bidirectional_netperf "HTB queue test "
+     bidirectional_netperf "HTB queue test"
 }
 
 
@@ -302,9 +306,9 @@ set -e
 # MAIN SEQUENCE
 
 prerequisites
-bare_netperf
+#bare_netperf
 #basic_ratelimit_netperf
-patch_port_netperf
+#patch_port_netperf
 htb_queue_ratelimit_overhead_netperf
 htb_queue_ratelimit_netperf
 kill_netservers 2>/dev/null 1>/dev/null
