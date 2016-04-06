@@ -1,6 +1,6 @@
 #!/bin/sh
 #          +-----+-------+   veth   +-------------+
-# $IF_A --(q) if-a-br   (q)---------| test-br-int +----$IF_B (the vm)     10.10.10.2
+# $IF_A ---+ if-a-br   (q)---------(q)test-br-int +----$IF_B (the vm)     10.10.10.2
 #          +-------------+          |             +----$IF_C (another vm) 10.10.10.3
 #                                   +-------------+
 #
@@ -225,6 +225,7 @@ basic_ratelimit_netperf(){
 	bidirectional_netperf "ingress_policy_rate test (B 1Mbps, A 2Mbps)"
 
 }
+
 patch_port_netperf(){
 
     pre_test
@@ -273,6 +274,40 @@ htb_queue_ratelimit_overhead_netperf(){
      basic_netperf "HTB (overhead check)"
 }
 
+htb_setqueue_ratelimit_netperf(){
+    	pre_test
+	# egress to port A - before leaving the network
+	ovs-vsctl set Port $IF_A qos=@newqos -- \
+	 		--id=@newqos create qos type=linux-htb other-config:max-rate=$_10Mb queues=0=@q0,1=@q1 -- \
+	 		--id=@q0 create Queue other-config:max-rate=$_10Mb -- \
+            		--id=@q1 create Queue other-config:min-rate=2100000 other-config:max-rate=4200000 
+
+    	# ingress from port A - just after entering the network
+	ovs-vsctl set Port $PATCH_PORT_A qos=@newqos -- \
+	 		--id=@newqos create qos type=linux-htb other-config:max-rate=$_10Mb queues=0=@q0,1=@q1,2=@q2 -- \
+			--id=@q0 create Queue other-config:max-rate=$_10Mb -- \
+	 		--id=@q1 create Queue other-config:min-rate=7350000 other-config:max-rate=7350000 --\
+			--id=@q2 create Queue other-config:min-rate=1050000 other-config:max-rate=9450000
+
+     IF_A_OFPORT=$(_find_br_ofport $EXT_BR $IF_A)
+     PATCH_A_OFPORT=$(_find_br_ofport $EXT_BR $PATCH_PORT_A)
+
+     MAC_A=$(_find_ns_if_mac $NETNS_A $IF_A_2)
+     MAC_B=$(_find_ns_if_mac $NETNS_B $IF_B_2)
+     MAC_C=$(_find_ns_if_mac $NETNS_C $IF_C_2)
+
+     ovs-ofctl add-flow $EXT_BR "dl_dst=$MAC_B actions=set_queue:1,goto_table:10"
+     ovs-ofctl add-flow $EXT_BR "dl_dst=$MAC_C actions=set_queue:2,goto_table:10"
+
+
+     ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_B actions=set_queue:1,goto_table:10"
+     ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_C actions=set_queue:1,goto_table:10"
+
+     ovs-ofctl add-flow $EXT_BR "table=10 actions=NORMAL"
+
+     bidirectional_netperf "HTB set_queue,NORMAL test -openvswitch-"
+}
+
 htb_queue_ratelimit_netperf(){
     	pre_test
 	# egress to port A - before leaving the network
@@ -302,7 +337,7 @@ htb_queue_ratelimit_netperf(){
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_B actions=enqueue:$IF_A_OFPORT:1" 
      ovs-ofctl add-flow $EXT_BR "dl_src=$MAC_C actions=enqueue:$IF_A_OFPORT:1" 
 
-     bidirectional_netperf "HTB queue test -openvswitch-"
+     bidirectional_netperf "HTB enqueue:$PORT,$queue test -openvswitch-"
 }
 
 
@@ -338,12 +373,13 @@ set -e
 # MAIN SEQUENCE
 
 prerequisites
-#bare_netperf
-#basic_ratelimit_netperf
-#patch_port_netperf
-#htb_queue_ratelimit_overhead_netperf
-#htb_queue_ratelimit_netperf
+bare_netperf
+basic_ratelimit_netperf
+patch_port_netperf
+htb_queue_ratelimit_overhead_netperf
+htb_queue_ratelimit_netperf
+htb_setqueue_ratelimit_netperf
 htb_tc_ratelimit_netperf
 
 kill_netservers 2>/dev/null 1>/dev/null
-#cleanup
+cleanup
