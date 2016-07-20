@@ -26,7 +26,7 @@ NETNS_C=test-netns-C
 IF_D=test_interfD
 IF_D_2=id_ns
 IP_D=10.10.10.4
-NETNS_C=test-netns-C
+NETNS_D=test-netns-D
 
 NETMASK=24
 
@@ -59,7 +59,7 @@ create_bridge_and_interfaces() {
                    $INT_BR $IF_A -- set Interface $IF_A type=internal
 
     ovs-vsctl --timeout=120 -- --if-exists del-port $IF_B -- add-port \
-                   $INT_BR $IF_A -- set Interface $IF_B type=internal
+                   $INT_BR $IF_B -- set Interface $IF_B type=internal
 
 
     ip link set $IF_A up
@@ -153,10 +153,10 @@ pre_test() {
 }
 
 basic_netperf() {
-    banner "A->B starting $1 (this is with veths)"
+    banner "A->B starting $1 (this is with A&B internal ports)"
 	ip netns exec $NETNS_A netperf -H $IP_B -p 1111 | grep -v MIGRATED 
 	ip netns exec $NETNS_A netperf -t TCP_RR -H $IP_B -p 1111 | grep -v MIGRATED
-    banner "C->D starting $1 (this is with patch ports)"
+    banner "C->D starting $1 (this is with A&B veths)"
 	ip netns exec $NETNS_C netperf -H $IP_D -p 1111 | grep -v MIGRATED 
 	ip netns exec $NETNS_C netperf -t TCP_RR -H $IP_D -p 1111 | grep -v MIGRATED
 }
@@ -171,10 +171,10 @@ banner()
 
 
 set -e
-set -x
 # MAIN SEQUENCE
 
 prerequisites
+cleanup
 pre_test_base
 pre_test_netns
 
