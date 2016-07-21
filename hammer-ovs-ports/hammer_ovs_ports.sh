@@ -91,7 +91,6 @@ _find_dhcp_ofport(){
 }
 
 set -e
-set -x
 INPUT_FILE=$1
 INPUT_FILE=${INPUT_FILE:-port_list.csv}
 IFS=,
@@ -103,6 +102,7 @@ do
 
 	while read port_id port_mac port_type
 	do
+   	   echo cleaning up $port_type id:$port_id mac:$port_mac
 	   if [[ "$port_type" == "VM" ]]; then
 	      _clean_up_vm_port $port_id ||:
 	   else
@@ -113,6 +113,7 @@ do
 
 	while read port_id port_mac port_type
 	do
+   	   echo adding $port_type id:$port_id mac:$port_mac
 	   if [[ "$port_type" == "VM" ]]; then
 		_add_vm_port $port_id $port_mac
 	   else
