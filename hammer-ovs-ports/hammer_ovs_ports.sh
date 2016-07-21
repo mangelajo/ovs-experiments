@@ -24,7 +24,8 @@ _add_dhcp_port() {
     port_name="tap${port_id:0:11}"
     ns_name="ns-$port_id"
     ip netns add $ns_name
-    ovs-vsctl --timeout=120 -- --if-exists del-port $port_name -- add-port br-int $port_name -- set Interface $port_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac type=internal
+    WAIT=--no-wait
+    ovs-vsctl --timeout=120 -- --if-exists del-port $port_name -- $WAIT add-port br-int $port_name -- set Interface $port_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac type=internal
     ip link set $port_name address $port_mac
     ip link set $port_name netns $ns_name
     ip netns exec $ns_name ip link set $port_name mtu 1450
