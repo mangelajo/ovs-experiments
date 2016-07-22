@@ -28,6 +28,7 @@ _ip_link_set_retry() {
     do
        ip link set $port_name $2 $3 $4 $5 $6 $7 && break
        n=$[$n+1]
+       echo "(retry $n/500) ip link set $port_name $2 $3 $4 $5 $6 $7"
     done
 }
 
@@ -40,8 +41,8 @@ _add_dhcp_port() {
     ip netns add $ns_name
     ovs-vsctl --if-exists del-port $port_name 
     ovs-vsctl $WAIT add-port br-int $port_name -- set Interface $port_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac type=internal
-    _ip_link_set_retry $port_name address $port_mac
-    ip link set $port_name netns $ns_name
+    _ip_link_set_retry $port_name netns $ns_name
+    ip netns exec $ns_name ip link set $port_name address $port_mac
     ip netns exec $ns_name ip link set $port_name mtu 1450
     ip netns exec $ns_name ip link set $port_name up
 }
@@ -134,7 +135,6 @@ function _wireup() {
 
 
 set -e
-set -x 
 
 INPUT_FILE=$1
 INPUT_FILE=${INPUT_FILE:-port_list.csv}
