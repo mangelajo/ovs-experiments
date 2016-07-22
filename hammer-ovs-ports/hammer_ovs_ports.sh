@@ -1,8 +1,10 @@
 #!/bin/bash
 
+export WAIT=${WAIT:-"--no-wait"}
+
 _check_ofport_repeats() {
 	TAIL=/tmp/$$.out
-	tail --lines 500 /var/log/openvswitch/ovs-vswitchd.log | grep " on port " > $TAIL
+	tail --lines 500 /var/log/openvswitch/ovs-vswitchd.log | grep " on port " | grep br-int > $TAIL
 	uniq_count=$(cat $TAIL | awk '{ print $8 }' | sort | uniq | wc --lines)
 	sort_count=$(cat $TAIL | awk '{ print $8 }' | sort | wc --lines)
 
@@ -17,6 +19,18 @@ _check_ofport_repeats() {
 	fi
 }
 
+
+_ip_link_set_retry() {
+    local port_name=$1
+    n=0
+    
+    until [ $n -ge 500 ]
+    do
+       ip link set $port_name $2 $3 $4 $5 $6 $7 && break
+       n=$[$n+1]
+    done
+}
+
 _add_dhcp_port() {
     # simulate dhcp port creation
     port_id=$1
@@ -24,9 +38,9 @@ _add_dhcp_port() {
     port_name="tap${port_id:0:11}"
     ns_name="ns-$port_id"
     ip netns add $ns_name
-    WAIT=--no-wait
-    ovs-vsctl --timeout=120 -- --if-exists del-port $port_name -- $WAIT add-port br-int $port_name -- set Interface $port_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac type=internal
-    ip link set $port_name address $port_mac
+    ovs-vsctl --if-exists del-port $port_name 
+    ovs-vsctl $WAIT add-port br-int $port_name -- set Interface $port_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac type=internal
+    _ip_link_set_retry $port_name address $port_mac
     ip link set $port_name netns $ns_name
     ip netns exec $ns_name ip link set $port_name mtu 1450
     ip netns exec $ns_name ip link set $port_name up
@@ -51,8 +65,9 @@ _add_vm_port() {
 #    ip link set $qvo_name mtu 1450
 #    ip link set $br_name up
 #    brctl addif $br_name $qvb_name
-    ovs-vsctl -- --if-exists del-port $qvo_name -- add-port br-int $qvo_name -- set Interface $qvo_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac external-ids:vm-uuid=388c2414-71be-4ad4-aeeb-c74ae28d984c
-    ip link set $qvo_name mtu 1450
+    ovs-vsctl --if-exists del-port $qvo_name 
+    ovs-vsctl $WAIT add-port br-int $qvo_name -- set Interface $qvo_name external-ids:iface-id=$port_id external-ids:iface-status=active external-ids:attached-mac=$port_mac external-ids:vm-uuid=388c2414-71be-4ad4-aeeb-c74ae28d984c
+    _ip_link_set_retry $qvo_name mtu 1450
 }
 
 _clean_up_dhcp_port() {
@@ -91,16 +106,7 @@ _find_dhcp_ofport(){
     _find_br_ofport br-int $port_name
 }
 
-set -e
-INPUT_FILE=$1
-INPUT_FILE=${INPUT_FILE:-port_list.csv}
-IFS=,
-
-ovs-appctl vlog/set file:info
-
-while :
-do
-
+function _cleanup() {
 	while read port_id port_mac port_type
 	do
    	   echo cleaning up $port_type id:$port_id mac:$port_mac
@@ -111,7 +117,9 @@ do
 	   fi
 
 	done < $INPUT_FILE
+}
 
+function _wireup() {
 	while read port_id port_mac port_type
 	do
    	   echo adding $port_type id:$port_id mac:$port_mac
@@ -122,7 +130,21 @@ do
 	   fi
 	   _check_ofport_repeats
 	done < $INPUT_FILE 
+}
 
 
+set -e
+set -x 
+
+INPUT_FILE=$1
+INPUT_FILE=${INPUT_FILE:-port_list.csv}
+IFS=,
+
+ovs-appctl vlog/set file:info
+
+while :
+do
+	_cleanup
+	_wireup
 done
 
